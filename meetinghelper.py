@@ -1,66 +1,125 @@
 import streamlit as st
-import pytesseract
 from PIL import Image
+import pytesseract
 import docx2txt
-import pdfplumber
-import os
-import tempfile
-import spacy
+import PyPDF2
+import easyocr
+import numpy as np
+import io
+from transformers import pipeline
 import gensim
 from gensim import corpora
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
+import pyLDAvis
+import pyLDAvis.gensim_models
+import streamlit.components.v1 as components
+import nltk
+from nltk.corpus import stopwords
 
-st.title("Document Analysis App")
+# Initialize NLTK stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
 
-uploaded_files = st.file_uploader("Upload your files", type=["jpeg", "png", "jpg", "docx", "pdf", "txt"], accept_multiple_files=True)
-ocr_texts = []
-all_texts = []
+st.title("Document Summarizer and Topic Modeling App")
+
+# Allow users to upload multiple files
+uploaded_files = st.file_uploader(
+    "Upload files",
+    type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'txt'],
+    accept_multiple_files=True
+)
+
+text_contents = []  # List to store extracted text from all files
 
 if uploaded_files:
+    # Initialize EasyOCR reader
+    reader = easyocr.Reader(['en'])
+
     for uploaded_file in uploaded_files:
-        if uploaded_file.type in ["image/jpeg", "image/png", "image/jpg"]:
+        file_type = uploaded_file.type
+        st.write(f"Processing file: {uploaded_file.name} (type: {file_type})")
+
+        if file_type in ["image/png", "image/jpeg"]:
+            # Process images
             image = Image.open(uploaded_file)
-            text = pytesseract.image_to_string(image)
-            ocr_texts.append(text)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as temp_txt:
-                temp_txt.write(text.encode())
-                st.download_button(label="Download OCR Text", data=text, file_name=os.path.basename(temp_txt.name))
-        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            text = docx2txt.process(uploaded_file)
-            all_texts.append(text)
-        elif uploaded_file.type == "application/pdf":
-            text = ""
-            with pdfplumber.open(uploaded_file) as pdf:
-                for page in pdf.pages:
-                    text += page.extract_text() + "\n"
-            all_texts.append(text)
-        elif uploaded_file.type == "text/plain":
-            text = uploaded_file.read().decode("utf-8")
-            all_texts.append(text)
+            result = reader.readtext(np.array(image))
+            extracted_text = ' '.join([text[1] for text in result])
+            st.write(f"Extracted Text from {uploaded_file.name}:")
+            st.write(extracted_text)
+            text_contents.append(extracted_text)
 
-    all_texts.extend(ocr_texts)
+            # Provide option to download the text
+            text_file = f"{uploaded_file.name}.txt"
+            st.download_button(
+                label=f"Download Text from {uploaded_file.name}",
+                data=extracted_text,
+                file_name=text_file,
+                mime='text/plain'
+            )
 
-    combined_text = " ".join(all_texts)
+        elif file_type == "application/pdf":
+            # Process PDFs
+            pdf_reader = PyPDF2.PdfReader(uploaded_file)
+            extracted_text = ''
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                extracted_text += page.extract_text()
+            st.write(f"Extracted Text from {uploaded_file.name}:")
+            st.write(extracted_text)
+            text_contents.append(extracted_text)
 
-    if combined_text:
-        nlp = spacy.load("en_core_web_sm")
-        doc = nlp(combined_text)
-        tokens = [token.lemma_ for token in doc if not token.is_stop and token.is_alpha]
-        dictionary = corpora.Dictionary([tokens])
-        corpus = [dictionary.doc2bow(tokens)]
-        ldamodel = gensim.models.ldamodel.LdaModel(corpus, num_topics=5, id2word=dictionary, passes=15)
-        topics = ldamodel.print_topics(num_words=4)
+        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            # Process Word documents
+            extracted_text = docx2txt.process(uploaded_file)
+            st.write(f"Extracted Text from {uploaded_file.name}:")
+            st.write(extracted_text)
+            text_contents.append(extracted_text)
 
-        st.subheader("Key Topics")
-        for idx, topic in topics:
-            st.write(f"Topic {idx + 1}: {topic}")
+        elif file_type == "text/plain":
+            # Process text files
+            extracted_text = uploaded_file.read().decode('utf-8')
+            st.write(f"Content of {uploaded_file.name}:")
+            st.write(extracted_text)
+            text_contents.append(extracted_text)
 
-        wordcloud = WordCloud(width=800, height=400, background_color='white').generate(combined_text)
-        st.subheader("Word Cloud of Key Topics")
-        fig, ax = plt.subplots()
-        ax.imshow(wordcloud, interpolation='bilinear')
-        ax.axis('off')
-        st.pyplot(fig)
+        else:
+            st.write(f"Unsupported file type: {file_type}")
 
-        st.download_button(label="Download Summary", data=combined_text, file_name="summary.txt")
+    if text_contents:
+        # Concatenate all text contents
+        full_text = ' '.join(text_contents)
+
+        # Summarization
+        st.subheader("Summarization")
+        summarizer = pipeline("summarization")
+        summary = summarizer(full_text, max_length=130, min_length=30, do_sample=False)
+        st.write(summary[0]['summary_text'])
+
+        # Topic Modeling
+        st.subheader("Topic Modeling")
+        # Preprocess text
+        def preprocess(text):
+            tokens = gensim.utils.simple_preprocess(text, deacc=True)
+            return [token for token in tokens if token not in stop_words]
+
+        processed_texts = [preprocess(text) for text in text_contents]
+        dictionary = corpora.Dictionary(processed_texts)
+        corpus = [dictionary.doc2bow(text) for text in processed_texts]
+        lda_model = gensim.models.LdaModel(
+            corpus, num_topics=5, id2word=dictionary, passes=15
+        )
+
+        st.subheader("Topics Identified:")
+        topics = lda_model.print_topics()
+        for topic in topics:
+            st.write(topic)
+
+        # Visualize the topics
+        st.subheader("Topic Modeling Visualization")
+        pyLDAvis.enable_notebook()
+        vis = pyLDAvis.gensim_models.prepare(lda_model, corpus, dictionary)
+        pyLDAvis.save_html(vis, 'lda.html')
+
+        # Display the visualization in Streamlit
+        HtmlFile = open("lda.html", 'r', encoding='utf-8')
+        source_code = HtmlFile.read()
+        components.html(source_code, height=800, scrolling=True)
