@@ -1,7 +1,6 @@
 import streamlit as st
 from PIL import Image
 import numpy as np
-import easyocr
 import docx
 import PyPDF2
 import matplotlib.pyplot as plt
@@ -12,6 +11,8 @@ from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
+from doctr.io import DocumentFile
+from doctr.models import ocr_predictor
 import traceback
 
 # Error logging function
@@ -27,10 +28,10 @@ def get_stopwords():
         nltk.download('stopwords')
         return set(stopwords.words('english'))
 
-# Cache the EasyOCR model to avoid redownloading every time
+# Load the Doctr OCR model
 @st.cache_resource
-def load_model():
-    return easyocr.Reader(["en"], model_storage_directory=".")
+def load_ocr_model():
+    return ocr_predictor(pretrained=True)
 
 # Function to process Word documents using python-docx
 def process_word_document(uploaded_file):
@@ -68,7 +69,7 @@ try:
 
     text_contents = []  # List to store extracted text from all files
     stop_words = get_stopwords()  # Get NLTK stopwords
-    reader = load_model()  # Load the cached EasyOCR model
+    ocr_model = load_ocr_model()  # Load the cached Doctr OCR model
 
     if uploaded_files:
         for uploaded_file in uploaded_files:
@@ -76,11 +77,14 @@ try:
             st.write(f"Processing file: {uploaded_file.name} (type: {file_type})")
 
             if file_type in ["image/png", "image/jpeg"]:
-                # Process images using cached EasyOCR model
-                input_image = Image.open(uploaded_file)
-                st.image(input_image, caption="Uploaded Image", use_column_width=True)
-                result = reader.readtext(np.array(input_image))
-                extracted_text = ' '.join([text[1] for text in result])
+                # Process images using Doctr OCR
+                input_image = DocumentFile.from_images(uploaded_file)
+                st.image(input_image[0], caption="Uploaded Image", use_column_width=True)
+                
+                with st.spinner("Extracting text..."):
+                    result = ocr_model(input_image)
+                
+                extracted_text = "\n".join([block['value'] for block in result.export()['pages'][0]['blocks']])
                 st.write(f"Extracted Text from {uploaded_file.name}:")
                 st.write(extracted_text)
                 text_contents.append(extracted_text)
