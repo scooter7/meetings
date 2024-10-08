@@ -12,3 +12,4 @@ matplotlib
 h5py
 opencv-python
 pandas
+python-docx
