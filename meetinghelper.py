@@ -13,6 +13,7 @@ from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
+import io
 import traceback
 
 # Error logging function
@@ -77,26 +78,35 @@ try:
             st.write(f"Processing file: {uploaded_file.name} (type: {file_type})")
 
             if file_type in ["image/png", "image/jpeg"]:
-                # Process images using Doctr OCR
-                input_image = DocumentFile.from_images(uploaded_file)
-                st.image(input_image[0], caption="Uploaded Image", use_column_width=True)
-                
-                with st.spinner("Extracting text..."):
-                    result = ocr_model(input_image)
-                
-                extracted_text = "\n".join([block['value'] for block in result.export()['pages'][0]['blocks']])
-                st.write(f"Extracted Text from {uploaded_file.name}:")
-                st.write(extracted_text)
-                text_contents.append(extracted_text)
+                # Read the uploaded file as an image
+                file_bytes = uploaded_file.read()
+                try:
+                    image = Image.open(io.BytesIO(file_bytes))
+                    # Display the uploaded image
+                    st.image(image, caption="Uploaded Image", use_column_width=True)
 
-                # Provide option to download the text
-                text_file = f"{uploaded_file.name}.txt"
-                st.download_button(
-                    label=f"Download Text from {uploaded_file.name}",
-                    data=extracted_text,
-                    file_name=text_file,
-                    mime='text/plain'
-                )
+                    # Convert the image to NumPy array for OCR
+                    image_np = np.array(image)
+
+                    # Run OCR on the image
+                    result = ocr_model([image_np])
+
+                    # Extract and display the OCR result
+                    extracted_text = "\n".join([block['value'] for block in result.export()['pages'][0]['blocks']])
+                    st.write(f"Extracted Text from {uploaded_file.name}:")
+                    st.write(extracted_text)
+                    text_contents.append(extracted_text)
+
+                    # Provide option to download the extracted text
+                    text_file = f"{uploaded_file.name}.txt"
+                    st.download_button(
+                        label=f"Download Text from {uploaded_file.name}",
+                        data=extracted_text,
+                        file_name=text_file,
+                        mime='text/plain'
+                    )
+                except Exception as e:
+                    log_error(e)
 
             elif file_type == "application/pdf":
                 # Process PDFs
