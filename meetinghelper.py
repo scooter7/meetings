@@ -13,7 +13,9 @@ import pyLDAvis.gensim_models
 import streamlit.components.v1 as components
 import nltk
 from nltk.corpus import stopwords
-from gensim.summarization import summarize
+from sumy.parsers.plaintext import PlaintextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.lsa import LsaSummarizer
 
 # Initialize NLTK stopwords
 nltk.download('stopwords')
@@ -88,10 +90,16 @@ if uploaded_files:
         # Concatenate all text contents
         full_text = ' '.join(text_contents)
 
-        # Summarization using Gensim
+        # Summarization using sumy
+        def summarize_text(text, sentence_count=5):
+            parser = PlaintextParser.from_string(text, Tokenizer("english"))
+            summarizer = LsaSummarizer()
+            summary = summarizer(parser.document, sentence_count)
+            return " ".join([str(sentence) for sentence in summary])
+
         st.subheader("Summarization")
         try:
-            summary = summarize(full_text, ratio=0.2)
+            summary = summarize_text(full_text)
             st.write(summary)
         except ValueError:
             st.write("Text too short to summarize.")
