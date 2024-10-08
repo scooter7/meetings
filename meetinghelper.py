@@ -6,16 +6,14 @@ import PyPDF2
 import easyocr
 import numpy as np
 import io
-import gensim
-from gensim import corpora
-import pyLDAvis
-import pyLDAvis.gensim_models
-import streamlit.components.v1 as components
+import matplotlib.pyplot as plt
 import nltk
 from nltk.corpus import stopwords
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer
 
 # Initialize NLTK stopwords
 nltk.download('stopwords')
@@ -104,32 +102,49 @@ if uploaded_files:
         except ValueError:
             st.write("Text too short to summarize.")
 
-        # Topic Modeling
+        # Topic Modeling using sklearn
         st.subheader("Topic Modeling")
-        # Preprocess text
+
         def preprocess(text):
-            tokens = gensim.utils.simple_preprocess(text, deacc=True)
-            return [token for token in tokens if token not in stop_words]
+            # Basic text preprocessing to remove stopwords
+            vectorizer = CountVectorizer(max_df=0.95, min_df=2, stop_words='english')
+            transformed_data = vectorizer.fit_transform([text])
+            return transformed_data, vectorizer
 
-        processed_texts = [preprocess(text) for text in text_contents]
-        dictionary = corpora.Dictionary(processed_texts)
-        corpus = [dictionary.doc2bow(text) for text in processed_texts]
-        lda_model = gensim.models.LdaModel(
-            corpus, num_topics=5, id2word=dictionary, passes=15
-        )
+        # Preprocess the concatenated text
+        transformed_texts, vectorizer = preprocess(full_text)
 
-        st.subheader("Topics Identified:")
-        topics = lda_model.print_topics()
-        for topic in topics:
-            st.write(topic)
+        # Fit the LDA model using sklearn
+        lda_model = LatentDirichletAllocation(n_components=5, random_state=42)
+        lda_model.fit(transformed_texts)
 
-        # Visualize the topics
-        st.subheader("Topic Modeling Visualization")
-        pyLDAvis.enable_notebook()
-        vis = pyLDAvis.gensim_models.prepare(lda_model, corpus, dictionary)
-        pyLDAvis.save_html(vis, 'lda.html')
+        # Get the top words for each topic
+        def display_topics(model, feature_names, no_top_words):
+            for topic_idx, topic in enumerate(model.components_):
+                st.write(f"Topic {topic_idx}:")
+                st.write(" ".join([feature_names[i] for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
-        # Display the visualization in Streamlit
-        HtmlFile = open("lda.html", 'r', encoding='utf-8')
-        source_code = HtmlFile.read()
-        components.html(source_code, height=800, scrolling=True)
+        st.write("Topics Identified:")
+        no_top_words = 10
+        feature_names = vectorizer.get_feature_names_out()
+        display_topics(lda_model, feature_names, no_top_words)
+
+        # Visualize the topics using a bar plot
+        def plot_top_words(model, feature_names, n_top_words, title):
+            fig, axes = plt.subplots(1, 1, figsize=(15, 8))
+            axes.set_title(title)
+            for topic_idx, topic in enumerate(model.components_):
+                top_features_ind = topic.argsort()[:-n_top_words - 1:-1]
+                top_features = [feature_names[i] for i in top_features_ind]
+                weights = topic[top_features_ind]
+                axes.barh(top_features, weights, height=0.7)
+                axes.set_title(f'Topic {topic_idx + 1}')
+                axes.set_xlabel('Word Importance')
+                axes.set_ylabel('Words')
+                plt.tight_layout()
+
+            st.pyplot(fig)
+
+        # Plot the top words in each topic
+        st.subheader("Topic Visualization")
+        plot_top_words(lda_model, feature_names, no_top_words, "Topics in LDA Model")
