@@ -1,11 +1,12 @@
 streamlit
 easyocr
+pytesseract
+Pillow
 python-docx
 PyPDF2
-transformers
-sumy
+numpy
+gensim
 pyLDAvis
 nltk
-torch  # Required for transformers and easyocr
-pytesseract
-docx2txt
+sumy
+
