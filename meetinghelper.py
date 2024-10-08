@@ -92,19 +92,35 @@ try:
                     result = ocr_model([image_np])
 
                     # Extract and display the OCR result
-                    extracted_text = "\n".join([block['value'] for block in result.export()['pages'][0]['blocks']])
-                    st.write(f"Extracted Text from {uploaded_file.name}:")
-                    st.write(extracted_text)
-                    text_contents.append(extracted_text)
+                    try:
+                        ocr_output = result.export()
+                        extracted_text = []
+                        for page in ocr_output.get('pages', []):
+                            for block in page.get('blocks', []):
+                                if 'value' in block:
+                                    extracted_text.append(block['value'])
+                                elif 'text' in block:
+                                    extracted_text.append(block['text'])  # Handle alternative key
 
-                    # Provide option to download the extracted text
-                    text_file = f"{uploaded_file.name}.txt"
-                    st.download_button(
-                        label=f"Download Text from {uploaded_file.name}",
-                        data=extracted_text,
-                        file_name=text_file,
-                        mime='text/plain'
-                    )
+                        extracted_text = "\n".join(extracted_text)
+                        st.write(f"Extracted Text from {uploaded_file.name}:")
+                        st.write(extracted_text)
+
+                        # Provide option to download the extracted text
+                        text_file = f"{uploaded_file.name}.txt"
+                        st.download_button(
+                            label=f"Download Text from {uploaded_file.name}",
+                            data=extracted_text,
+                            file_name=text_file,
+                            mime='text/plain'
+                        )
+                        text_contents.append(extracted_text)
+
+                    except KeyError as e:
+                        st.error(f"Key error while processing the OCR output: {e}")
+                    except Exception as e:
+                        log_error(e)
+
                 except Exception as e:
                     log_error(e)
 
