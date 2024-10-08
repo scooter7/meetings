@@ -8,4 +8,4 @@ numpy
 scikit-learn
 nltk
 sumy
-doc2text
+docx2text
