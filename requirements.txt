@@ -4,6 +4,7 @@ Pillow
 docx2txt
 pdfplumber
 spacy
-gensim
+gensim==4.0.1
 wordcloud
 matplotlib
+scipy==1.7.3
