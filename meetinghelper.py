@@ -1,10 +1,9 @@
 import streamlit as st
 from PIL import Image
-import pytesseract
+import numpy as np
+import easyocr
 import docx
 import PyPDF2
-import easyocr
-import numpy as np
 import matplotlib.pyplot as plt
 import nltk
 from nltk.corpus import stopwords
@@ -13,19 +12,25 @@ from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
+import traceback
 
-# Initialize NLTK stopwords
-nltk.download('stopwords')
-stop_words = set(stopwords.words('english'))
+# Error logging function
+def log_error(e):
+    st.error(f"An error occurred: {str(e)}")
+    st.error(traceback.format_exc())
 
-st.title("Document Summarizer and Topic Modeling App")
+# Ensure NLTK stopwords are downloaded
+def get_stopwords():
+    try:
+        return set(stopwords.words('english'))
+    except LookupError:
+        nltk.download('stopwords')
+        return set(stopwords.words('english'))
 
-# Allow users to upload multiple files
-uploaded_files = st.file_uploader(
-    "Upload files",
-    type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'txt'],
-    accept_multiple_files=True
-)
+# Cache the EasyOCR model to avoid redownloading every time
+@st.cache_resource
+def load_model():
+    return easyocr.Reader(["en"], model_storage_directory=".")
 
 # Function to process Word documents using python-docx
 def process_word_document(uploaded_file):
@@ -35,124 +40,136 @@ def process_word_document(uploaded_file):
         full_text.append(para.text)
     return '\n'.join(full_text)
 
-# List to store extracted text from all files
-text_contents = []
+# Visualize the topics using a bar plot
+def plot_top_words(model, feature_names, n_top_words, title):
+    fig, axes = plt.subplots(1, 1, figsize=(15, 8))
+    axes.set_title(title)
+    for topic_idx, topic in enumerate(model.components_):
+        top_features_ind = topic.argsort()[:-n_top_words - 1:-1]
+        top_features = [feature_names[i] for i in top_features_ind]
+        weights = topic[top_features_ind]
+        axes.barh(top_features, weights, height=0.7)
+        axes.set_title(f'Topic {topic_idx + 1}')
+        axes.set_xlabel('Word Importance')
+        axes.set_ylabel('Words')
+        plt.tight_layout()
 
-if uploaded_files:
-    # Initialize EasyOCR reader
-    reader = easyocr.Reader(['en'])
+    st.pyplot(fig)
 
-    for uploaded_file in uploaded_files:
-        file_type = uploaded_file.type
-        st.write(f"Processing file: {uploaded_file.name} (type: {file_type})")
+try:
+    st.title("Document Summarizer and Topic Modeling App")
 
-        if file_type in ["image/png", "image/jpeg"]:
-            # Process images
-            image = Image.open(uploaded_file)
-            result = reader.readtext(np.array(image))
-            extracted_text = ' '.join([text[1] for text in result])
-            st.write(f"Extracted Text from {uploaded_file.name}:")
-            st.write(extracted_text)
-            text_contents.append(extracted_text)
+    # Allow users to upload multiple files
+    uploaded_files = st.file_uploader(
+        "Upload files",
+        type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'txt'],
+        accept_multiple_files=True
+    )
 
-            # Provide option to download the text
-            text_file = f"{uploaded_file.name}.txt"
-            st.download_button(
-                label=f"Download Text from {uploaded_file.name}",
-                data=extracted_text,
-                file_name=text_file,
-                mime='text/plain'
-            )
+    text_contents = []  # List to store extracted text from all files
+    stop_words = get_stopwords()  # Get NLTK stopwords
+    reader = load_model()  # Load the cached EasyOCR model
 
-        elif file_type == "application/pdf":
-            # Process PDFs
-            pdf_reader = PyPDF2.PdfReader(uploaded_file)
-            extracted_text = ''
-            for page_num in range(len(pdf_reader.pages)):
-                page = pdf_reader.pages[page_num]
-                extracted_text += page.extract_text()
-            st.write(f"Extracted Text from {uploaded_file.name}:")
-            st.write(extracted_text)
-            text_contents.append(extracted_text)
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            file_type = uploaded_file.type
+            st.write(f"Processing file: {uploaded_file.name} (type: {file_type})")
 
-        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            # Process Word documents
-            extracted_text = process_word_document(uploaded_file)
-            st.write(f"Extracted Text from {uploaded_file.name}:")
-            st.write(extracted_text)
-            text_contents.append(extracted_text)
+            if file_type in ["image/png", "image/jpeg"]:
+                # Process images using cached EasyOCR model
+                input_image = Image.open(uploaded_file)
+                st.image(input_image, caption="Uploaded Image", use_column_width=True)
+                result = reader.readtext(np.array(input_image))
+                extracted_text = ' '.join([text[1] for text in result])
+                st.write(f"Extracted Text from {uploaded_file.name}:")
+                st.write(extracted_text)
+                text_contents.append(extracted_text)
 
-        elif file_type == "text/plain":
-            # Process text files
-            extracted_text = uploaded_file.read().decode('utf-8')
-            st.write(f"Content of {uploaded_file.name}:")
-            st.write(extracted_text)
-            text_contents.append(extracted_text)
+                # Provide option to download the text
+                text_file = f"{uploaded_file.name}.txt"
+                st.download_button(
+                    label=f"Download Text from {uploaded_file.name}",
+                    data=extracted_text,
+                    file_name=text_file,
+                    mime='text/plain'
+                )
 
-        else:
-            st.write(f"Unsupported file type: {file_type}")
+            elif file_type == "application/pdf":
+                # Process PDFs
+                pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                extracted_text = ''
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    extracted_text += page.extract_text()
+                st.write(f"Extracted Text from {uploaded_file.name}:")
+                st.write(extracted_text)
+                text_contents.append(extracted_text)
 
-    if text_contents:
-        # Concatenate all text contents
-        full_text = ' '.join(text_contents)
+            elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                # Process Word documents
+                extracted_text = process_word_document(uploaded_file)
+                st.write(f"Extracted Text from {uploaded_file.name}:")
+                st.write(extracted_text)
+                text_contents.append(extracted_text)
 
-        # Summarization using sumy
-        def summarize_text(text, sentence_count=5):
-            parser = PlaintextParser.from_string(text, Tokenizer("english"))
-            summarizer = LsaSummarizer()
-            summary = summarizer(parser.document, sentence_count)
-            return " ".join([str(sentence) for sentence in summary])
+            elif file_type == "text/plain":
+                # Process text files
+                extracted_text = uploaded_file.read().decode('utf-8')
+                st.write(f"Content of {uploaded_file.name}:")
+                st.write(extracted_text)
+                text_contents.append(extracted_text)
 
-        st.subheader("Summarization")
-        try:
-            summary = summarize_text(full_text)
-            st.write(summary)
-        except ValueError:
-            st.write("Text too short to summarize.")
+            else:
+                st.write(f"Unsupported file type: {file_type}")
 
-        # Topic Modeling using sklearn
-        st.subheader("Topic Modeling")
+        if text_contents:
+            # Concatenate all text contents
+            full_text = ' '.join(text_contents)
 
-        def preprocess(text):
-            # Basic text preprocessing to remove stopwords
-            vectorizer = CountVectorizer(max_df=0.95, min_df=2, stop_words='english')
-            transformed_data = vectorizer.fit_transform([text])
-            return transformed_data, vectorizer
+            # Summarization using sumy
+            def summarize_text(text, sentence_count=5):
+                parser = PlaintextParser.from_string(text, Tokenizer("english"))
+                summarizer = LsaSummarizer()
+                summary = summarizer(parser.document, sentence_count)
+                return " ".join([str(sentence) for sentence in summary])
 
-        # Preprocess the concatenated text
-        transformed_texts, vectorizer = preprocess(full_text)
+            st.subheader("Summarization")
+            try:
+                summary = summarize_text(full_text)
+                st.write(summary)
+            except ValueError:
+                st.write("Text too short to summarize.")
 
-        # Fit the LDA model using sklearn
-        lda_model = LatentDirichletAllocation(n_components=5, random_state=42)
-        lda_model.fit(transformed_texts)
+            # Topic Modeling using sklearn
+            st.subheader("Topic Modeling")
 
-        # Get the top words for each topic
-        def display_topics(model, feature_names, no_top_words):
-            for topic_idx, topic in enumerate(model.components_):
-                st.write(f"Topic {topic_idx}:")
-                st.write(" ".join([feature_names[i] for i in topic.argsort()[:-no_top_words - 1:-1]]))
+            def preprocess(text):
+                # Basic text preprocessing to remove stopwords
+                vectorizer = CountVectorizer(max_df=0.95, min_df=2, stop_words='english')
+                transformed_data = vectorizer.fit_transform([text])
+                return transformed_data, vectorizer
 
-        st.write("Topics Identified:")
-        no_top_words = 10
-        feature_names = vectorizer.get_feature_names_out()
-        display_topics(lda_model, feature_names, no_top_words)
+            # Preprocess the concatenated text
+            transformed_texts, vectorizer = preprocess(full_text)
 
-        # Visualize the topics using a bar plot
-        def plot_top_words(model, feature_names, n_top_words, title):
-            fig, axes = plt.subplots(1, 1, figsize=(15, 8))
-            axes.set_title(title)
-            for topic_idx, topic in enumerate(model.components_):
-                top_features_ind = topic.argsort()[:-n_top_words - 1:-1]
-                top_features = [feature_names[i] for i in top_features_ind]
-                weights = topic[top_features_ind]
-                axes.barh(top_features, weights, height=0.7)
-                axes.set_title(f'Topic {topic_idx + 1}')
-                axes.set_xlabel('Word Importance')
-                axes.set_ylabel('Words')
-                plt.tight_layout()
+            # Fit the LDA model using sklearn
+            lda_model = LatentDirichletAllocation(n_components=5, random_state=42)
+            lda_model.fit(transformed_texts)
 
-            st.pyplot(fig)
+            # Get the top words for each topic
+            def display_topics(model, feature_names, no_top_words):
+                for topic_idx, topic in enumerate(model.components_):
+                    st.write(f"Topic {topic_idx}:")
+                    st.write(" ".join([feature_names[i] for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
-        # Plot the top words in each topic
-        st.subheader("Topic Visualization")
-        plot_top_words(lda_model, feature_names, no_top_words, "Topics in LDA Model")
+            st.write("Topics Identified:")
+            no_top_words = 10
+            feature_names = vectorizer.get_feature_names_out()
+            display_topics(lda_model, feature_names, no_top_words)
+
+            # Plot the top words in each topic
+            st.subheader("Topic Visualization")
+            plot_top_words(lda_model, feature_names, no_top_words, "Topics in LDA Model")
+
+except Exception as e:
+    log_error(e)
