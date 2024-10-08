@@ -1,12 +1,14 @@
 streamlit
-doctr
+python-doctr[torch]
 torch
 torchvision
 Pillow
-python-docx
 PyPDF2
 numpy
 scikit-learn
 nltk
 sumy
 matplotlib
+h5py
+opencv-python
+pandas
