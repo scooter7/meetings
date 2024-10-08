@@ -18,10 +18,10 @@ import traceback
 
 # Ensure NLTK resources are downloaded
 def download_nltk_resources():
-    nltk.download('punkt')  # Ensure 'punkt' tokenizer is available
-    nltk.download('stopwords')  # Ensure stopwords are available
+    nltk.download('punkt')
+    nltk.download('stopwords')
 
-download_nltk_resources()  # Download NLTK resources on app load
+download_nltk_resources()
 
 # Error logging function
 def log_error(e):
@@ -88,11 +88,12 @@ def main():
                     result = ocr_model([image_np])
                     ocr_output = result.export()
 
-                    extracted_text = [
-                        block['value'] if 'value' in block else block['text']
-                        for page in ocr_output.get('pages', [])
-                        for block in page.get('blocks', [])
-                    ]
+                    extracted_text = []
+                    for page in ocr_output.get('pages', []):
+                        for block in page.get('blocks', []):
+                            # Check for both 'value' and 'text', fallback to empty string if neither exist
+                            extracted_text.append(block.get('value', block.get('text', '')))
+                    
                     extracted_text = "\n".join(extracted_text)
                     st.write(f"Extracted Text from {uploaded_file.name}:")
                     st.write(extracted_text)
