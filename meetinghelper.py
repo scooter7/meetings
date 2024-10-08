@@ -16,6 +16,9 @@ from doctr.models import ocr_predictor
 import io
 import traceback
 
+# Ensure NLTK resources are downloaded
+nltk.download('punkt')
+
 # Error logging function
 def log_error(e):
     st.error(f"An error occurred: {str(e)}")
@@ -158,6 +161,9 @@ try:
 
             # Summarization using sumy
             def summarize_text(text, sentence_count=5):
+                # Ensure NLTK punkt is available
+                nltk.download('punkt')
+                
                 parser = PlaintextParser.from_string(text, Tokenizer("english"))
                 summarizer = LsaSummarizer()
                 summary = summarizer(parser.document, sentence_count)
