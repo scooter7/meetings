@@ -6,7 +6,6 @@ import PyPDF2
 import easyocr
 import numpy as np
 import io
-from transformers import pipeline
 import gensim
 from gensim import corpora
 import pyLDAvis
@@ -14,6 +13,7 @@ import pyLDAvis.gensim_models
 import streamlit.components.v1 as components
 import nltk
 from nltk.corpus import stopwords
+from gensim.summarization import summarize
 
 # Initialize NLTK stopwords
 nltk.download('stopwords')
@@ -88,11 +88,13 @@ if uploaded_files:
         # Concatenate all text contents
         full_text = ' '.join(text_contents)
 
-        # Summarization
+        # Summarization using Gensim
         st.subheader("Summarization")
-        summarizer = pipeline("summarization")
-        summary = summarizer(full_text, max_length=130, min_length=30, do_sample=False)
-        st.write(summary[0]['summary_text'])
+        try:
+            summary = summarize(full_text, ratio=0.2)
+            st.write(summary)
+        except ValueError:
+            st.write("Text too short to summarize.")
 
         # Topic Modeling
         st.subheader("Topic Modeling")
