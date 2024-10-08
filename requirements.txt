@@ -5,8 +5,8 @@ Pillow
 python-docx
 PyPDF2
 numpy
-gensim
+gensim==4.1.2
 pyLDAvis
 nltk
 sumy
-
+scipy==1.11.2
