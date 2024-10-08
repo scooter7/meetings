@@ -8,3 +8,4 @@ pyLDAvis
 nltk
 torch  # Required for transformers and easyocr
 pytesseract
+docx2txt
