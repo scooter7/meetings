@@ -10,6 +10,6 @@ nltk
 sumy
 matplotlib
 h5py
-opencv-python
+opencv-python-headless
 pandas
 python-docx
