@@ -4,29 +4,15 @@ import numpy as np
 import docx
 import PyPDF2
 import matplotlib.pyplot as plt
-import nltk
-from nltk.corpus import stopwords
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.lsa import LsaSummarizer
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 import io
-import traceback
+import spacy
 
-# Ensure NLTK resources are downloaded
-def download_nltk_resources():
-    nltk.download('punkt')
-    nltk.download('stopwords')
-
-download_nltk_resources()
-
-# Error logging function
-def log_error(e):
-    st.error(f"An error occurred: {str(e)}")
-    st.error(traceback.format_exc())
+# Load spaCy model
+nlp = spacy.load("en_core_web_sm")
 
 # Load the Doctr OCR model
 @st.cache_resource
@@ -39,12 +25,12 @@ def process_word_document(uploaded_file):
     full_text = [para.text for para in doc.paragraphs]
     return '\n'.join(full_text)
 
-# Summarization using sumy
+# Summarization using spaCy
 def summarize_text(text, sentence_count=5):
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    summarizer = LsaSummarizer()
-    summary = summarizer(parser.document, sentence_count)
-    return " ".join([str(sentence) for sentence in summary])
+    doc = nlp(text)
+    # Extract top sentences for summarization (by length here, can be tweaked)
+    sentences = list(doc.sents)
+    return ' '.join([str(sent) for sent in sentences[:sentence_count]])
 
 # Visualize the topics using a bar plot
 def plot_top_words(model, feature_names, n_top_words, title):
@@ -91,7 +77,6 @@ def main():
                     extracted_text = []
                     for page in ocr_output.get('pages', []):
                         for block in page.get('blocks', []):
-                            # Check for both 'value' and 'text', fallback to empty string if neither exist
                             extracted_text.append(block.get('value', block.get('text', '')))
                     
                     extracted_text = "\n".join(extracted_text)
@@ -107,7 +92,7 @@ def main():
                     )
 
                 except Exception as e:
-                    log_error(e)
+                    st.error(f"An error occurred while processing the image: {e}")
 
             elif file_type == "application/pdf":
                 try:
@@ -117,7 +102,7 @@ def main():
                     st.write(extracted_text)
                     text_contents.append(extracted_text)
                 except Exception as e:
-                    log_error(e)
+                    st.error(f"An error occurred while processing the PDF: {e}")
 
             elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 extracted_text = process_word_document(uploaded_file)
