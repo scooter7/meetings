@@ -17,33 +17,34 @@ import io
 import traceback
 
 # Ensure NLTK resources are downloaded
-nltk.download('punkt')
+def download_nltk_resources():
+    nltk.download('punkt')  # Ensure 'punkt' tokenizer is available
+    nltk.download('stopwords')  # Ensure stopwords are available
+
+download_nltk_resources()  # Download NLTK resources on app load
 
 # Error logging function
 def log_error(e):
     st.error(f"An error occurred: {str(e)}")
     st.error(traceback.format_exc())
 
-# Ensure NLTK stopwords are downloaded
-def get_stopwords():
-    try:
-        return set(stopwords.words('english'))
-    except LookupError:
-        nltk.download('stopwords')
-        return set(stopwords.words('english'))
-
 # Load the Doctr OCR model
 @st.cache_resource
 def load_ocr_model():
     return ocr_predictor(pretrained=True)
 
-# Function to process Word documents using python-docx
+# Process Word documents using python-docx
 def process_word_document(uploaded_file):
     doc = docx.Document(uploaded_file)
-    full_text = []
-    for para in doc.paragraphs:
-        full_text.append(para.text)
+    full_text = [para.text for para in doc.paragraphs]
     return '\n'.join(full_text)
+
+# Summarization using sumy
+def summarize_text(text, sentence_count=5):
+    parser = PlaintextParser.from_string(text, Tokenizer("english"))
+    summarizer = LsaSummarizer()
+    summary = summarizer(parser.document, sentence_count)
+    return " ".join([str(sentence) for sentence in summary])
 
 # Visualize the topics using a bar plot
 def plot_top_words(model, feature_names, n_top_words, title):
@@ -58,21 +59,20 @@ def plot_top_words(model, feature_names, n_top_words, title):
         axes.set_xlabel('Word Importance')
         axes.set_ylabel('Words')
         plt.tight_layout()
-
     st.pyplot(fig)
 
-try:
+# Main function
+def main():
     st.title("Document Summarizer and Topic Modeling App")
 
     # Allow users to upload multiple files
     uploaded_files = st.file_uploader(
-        "Upload files",
-        type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'txt'],
+        "Upload files", 
+        type=['png', 'jpg', 'jpeg', 'pdf', 'docx', 'txt'], 
         accept_multiple_files=True
     )
 
-    text_contents = []  # List to store extracted text from all files
-    stop_words = get_stopwords()  # Get NLTK stopwords
+    text_contents = []  # Store extracted text from all files
     ocr_model = load_ocr_model()  # Load the cached Doctr OCR model
 
     if uploaded_files:
@@ -81,72 +81,50 @@ try:
             st.write(f"Processing file: {uploaded_file.name} (type: {file_type})")
 
             if file_type in ["image/png", "image/jpeg"]:
-                # Read the uploaded file as an image
-                file_bytes = uploaded_file.read()
                 try:
-                    image = Image.open(io.BytesIO(file_bytes))
-                    # Display the uploaded image
+                    image = Image.open(io.BytesIO(uploaded_file.read()))
                     st.image(image, caption="Uploaded Image", use_column_width=True)
-
-                    # Convert the image to NumPy array for OCR
                     image_np = np.array(image)
-
-                    # Run OCR on the image
                     result = ocr_model([image_np])
+                    ocr_output = result.export()
 
-                    # Extract and display the OCR result
-                    try:
-                        ocr_output = result.export()
-                        extracted_text = []
-                        for page in ocr_output.get('pages', []):
-                            for block in page.get('blocks', []):
-                                if 'value' in block:
-                                    extracted_text.append(block['value'])
-                                elif 'text' in block:
-                                    extracted_text.append(block['text'])  # Handle alternative key
+                    extracted_text = [
+                        block['value'] if 'value' in block else block['text']
+                        for page in ocr_output.get('pages', [])
+                        for block in page.get('blocks', [])
+                    ]
+                    extracted_text = "\n".join(extracted_text)
+                    st.write(f"Extracted Text from {uploaded_file.name}:")
+                    st.write(extracted_text)
+                    text_contents.append(extracted_text)
 
-                        extracted_text = "\n".join(extracted_text)
-                        st.write(f"Extracted Text from {uploaded_file.name}:")
-                        st.write(extracted_text)
-
-                        # Provide option to download the extracted text
-                        text_file = f"{uploaded_file.name}.txt"
-                        st.download_button(
-                            label=f"Download Text from {uploaded_file.name}",
-                            data=extracted_text,
-                            file_name=text_file,
-                            mime='text/plain'
-                        )
-                        text_contents.append(extracted_text)
-
-                    except KeyError as e:
-                        st.error(f"Key error while processing the OCR output: {e}")
-                    except Exception as e:
-                        log_error(e)
+                    st.download_button(
+                        label=f"Download Text from {uploaded_file.name}",
+                        data=extracted_text,
+                        file_name=f"{uploaded_file.name}.txt",
+                        mime='text/plain'
+                    )
 
                 except Exception as e:
                     log_error(e)
 
             elif file_type == "application/pdf":
-                # Process PDFs
-                pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                extracted_text = ''
-                for page_num in range(len(pdf_reader.pages)):
-                    page = pdf_reader.pages[page_num]
-                    extracted_text += page.extract_text()
-                st.write(f"Extracted Text from {uploaded_file.name}:")
-                st.write(extracted_text)
-                text_contents.append(extracted_text)
+                try:
+                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                    extracted_text = ''.join(page.extract_text() for page in pdf_reader.pages)
+                    st.write(f"Extracted Text from {uploaded_file.name}:")
+                    st.write(extracted_text)
+                    text_contents.append(extracted_text)
+                except Exception as e:
+                    log_error(e)
 
             elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                # Process Word documents
                 extracted_text = process_word_document(uploaded_file)
                 st.write(f"Extracted Text from {uploaded_file.name}:")
                 st.write(extracted_text)
                 text_contents.append(extracted_text)
 
             elif file_type == "text/plain":
-                # Process text files
                 extracted_text = uploaded_file.read().decode('utf-8')
                 st.write(f"Content of {uploaded_file.name}:")
                 st.write(extracted_text)
@@ -156,19 +134,9 @@ try:
                 st.write(f"Unsupported file type: {file_type}")
 
         if text_contents:
-            # Concatenate all text contents
             full_text = ' '.join(text_contents)
 
-            # Summarization using sumy
-            def summarize_text(text, sentence_count=5):
-                # Ensure NLTK punkt is available
-                nltk.download('punkt')
-                
-                parser = PlaintextParser.from_string(text, Tokenizer("english"))
-                summarizer = LsaSummarizer()
-                summary = summarizer(parser.document, sentence_count)
-                return " ".join([str(sentence) for sentence in summary])
-
+            # Summarization
             st.subheader("Summarization")
             try:
                 summary = summarize_text(full_text)
@@ -176,36 +144,28 @@ try:
             except ValueError:
                 st.write("Text too short to summarize.")
 
-            # Topic Modeling using sklearn
+            # Topic Modeling
             st.subheader("Topic Modeling")
 
             def preprocess(text):
-                # Basic text preprocessing to remove stopwords
                 vectorizer = CountVectorizer(max_df=0.95, min_df=2, stop_words='english')
                 transformed_data = vectorizer.fit_transform([text])
                 return transformed_data, vectorizer
 
-            # Preprocess the concatenated text
             transformed_texts, vectorizer = preprocess(full_text)
-
-            # Fit the LDA model using sklearn
             lda_model = LatentDirichletAllocation(n_components=5, random_state=42)
             lda_model.fit(transformed_texts)
 
-            # Get the top words for each topic
             def display_topics(model, feature_names, no_top_words):
                 for topic_idx, topic in enumerate(model.components_):
                     st.write(f"Topic {topic_idx}:")
                     st.write(" ".join([feature_names[i] for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
-            st.write("Topics Identified:")
             no_top_words = 10
             feature_names = vectorizer.get_feature_names_out()
             display_topics(lda_model, feature_names, no_top_words)
 
-            # Plot the top words in each topic
-            st.subheader("Topic Visualization")
             plot_top_words(lda_model, feature_names, no_top_words, "Topics in LDA Model")
 
-except Exception as e:
-    log_error(e)
+if __name__ == "__main__":
+    main()
