@@ -1,0 +1,9 @@
+streamlit
+pytesseract
+Pillow
+docx2txt
+pdfplumber
+spacy
+gensim
+wordcloud
+matplotlib
