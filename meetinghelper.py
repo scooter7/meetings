@@ -1,11 +1,10 @@
 import streamlit as st
 from PIL import Image
 import pytesseract
-import docx2txt
+import docx
 import PyPDF2
 import easyocr
 import numpy as np
-import io
 import matplotlib.pyplot as plt
 import nltk
 from nltk.corpus import stopwords
@@ -28,7 +27,16 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-text_contents = []  # List to store extracted text from all files
+# Function to process Word documents using python-docx
+def process_word_document(uploaded_file):
+    doc = docx.Document(uploaded_file)
+    full_text = []
+    for para in doc.paragraphs:
+        full_text.append(para.text)
+    return '\n'.join(full_text)
+
+# List to store extracted text from all files
+text_contents = []
 
 if uploaded_files:
     # Initialize EasyOCR reader
@@ -69,7 +77,7 @@ if uploaded_files:
 
         elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             # Process Word documents
-            extracted_text = docx2txt.process(uploaded_file)
+            extracted_text = process_word_document(uploaded_file)
             st.write(f"Extracted Text from {uploaded_file.name}:")
             st.write(extracted_text)
             text_contents.append(extracted_text)
