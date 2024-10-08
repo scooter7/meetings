@@ -3,7 +3,7 @@ easyocr
 python-docx
 PyPDF2
 transformers
-gensim
+sumy
 pyLDAvis
 nltk
 torch  # Required for transformers and easyocr
